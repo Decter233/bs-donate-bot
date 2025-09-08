@@ -34,3 +34,6 @@ CREATE TABLE IF NOT EXISTS payments (
     proof_file_id TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+git add schema.sql
+git commit -m "Добавил schema.sql для миграции БД"
+git push origin main
