@@ -155,117 +155,6 @@ async def buy_product(update: Update, context: ContextTypes.DEFAULT_TYPE, produc
         except Exception:
             pass
 
-async def my_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    async with get_db() as db:
-        sql = (
-            "SELECT o.id, p.name, o.price, o.status, o.created_at "
-            "FROM orders o JOIN products p ON p.id=o.product_id "
-            "WHERE o.user_id=? ORDER BY o.id DESC LIMIT 10;"
-        )
-        cur = await db.execute(sql, (update.effective_user.id,))
-        rows = await cur.fetchall()
-    if not rows:
-        txt = "Пока заказов нет."
-    else:
-        lines = [f"{order_code(oid)} — {name} — {price}₽ — {status}" for oid, name, price, status, _ in rows]
-        txt = "Ваши последние заказы:\n" + "\n".join(lines)
-    if update.callback_query:
-        await update.callback_query.answer()
-        await update.callback_query.edit_message_text(txt, reply_markup=main_menu_kb())
-    else:
-        await update.message.reply_text(txt, reply_markup=main_menu_kb())
-
-# ----------------------- Обработка оплат -----------------------
-async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    u = update.effective_user
-    file_id = None
-    if update.message.photo:
-        file_id = update.message.photo[-1].file_id
-    elif update.message.document:
-        file_id = update.message.document.file_id
-    else:
-        return
-    async with get_db() as db:
-        cur = await db.execute(
-            "SELECT id, price FROM orders WHERE user_id=? AND status='awaiting_payment' ORDER BY id DESC LIMIT 1;",
-            (u.id,)
-        )
-        row = await cur.fetchone()
-    if not row:
-        await update.message.reply_text("Не нашёл активного заказа в статусе ожидания оплаты. Оформите заказ из каталога.")
-        return
-    order_id, price = row
-    await record_payment(order_id, amount=price, proof_file_id=file_id)
-    oc = order_code(order_id)
-    await update.message.reply_text(f"Спасибо! Чек для {oc} получен. Ожидайте подтверждения администратором.")
-    for admin_id in ADMIN_IDS:
-        try:
-            if update.message.photo:
-                await context.bot.send_photo(admin_id, file_id, caption=f"🧾 Чек по {oc} от @{u.username or u.id}")
-            elif update.message.document:
-                await context.bot.send_document(admin_id, file_id, caption=f"🧾 Чек по {oc} от @{u.username or u.id}")
-            await context.bot.send_message(admin_id, f"Проверить заказ {oc}?",
-                                           reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Отметить оплачено", callback_data=f"admin_mark_paid_{order_id}"),
-                                                                               InlineKeyboardButton("Отклонить", callback_data=f"admin_reject_{order_id}")]]))
-        except Exception:
-            pass
-
-# ----------------------- Админ-функции -----------------------
-def admin_only(func):
-    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
-        if update.effective_user.id not in ADMIN_IDS:
-            if update.callback_query:
-                await update.callback_query.answer("Недостаточно прав", show_alert=True)
-            else:
-                await update.message.reply_text("Недостаточно прав.")
-            return
-        return await func(update, context, *args, **kwargs)
-    return wrapper
-
-@admin_only
-async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🧾 Заказы (ожидают)", callback_data="admin_orders_pending")],
-        [InlineKeyboardButton("➕ Товары (добавить)", callback_data="admin_add_product")],
-        [InlineKeyboardButton("📦 Товары (список)", callback_data="admin_list_products")]
-    ])
-    if update.message:
-        await update.message.reply_text("Админ-меню:", reply_markup=kb)
-    else:
-        await update.callback_query.edit_message_text("Админ-меню:", reply_markup=kb)
-
-# ----------------------- Router -----------------------
-async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    data = q.data
-
-    if data == "catalog":
-        return await catalog(update, context)
-    if data == "my_orders":
-        return await my_orders(update, context)
-    if data == "help":
-        return await help_cmd(update, context)
-    if data == "back_main":
-        return await start(update, context)
-
-    if data.startswith("prod_"):
-        pid = int(data.split("_")[1])
-        return await product_view(update, context, pid)
-    if data.startswith("buy_"):
-        pid = int(data.split("_")[1])
-        return await buy_product(update, context, pid)
-    if data.startswith("paid_"):
-        await q.answer("Если вы ещё не отправили скриншот — пришлите его сообщением сюда.")
-        return
-    if data.startswith("admin_mark_paid_"):
-        oid = int(data.split("_")[3])
-        return await admin_mark_paid(update, context, oid)
-    if data.startswith("admin_reject_"):
-        oid = int(data.split("_")[2])
-        return await admin_reject(update, context, oid)
-
-    await q.answer("Неизвестная команда")
-
 # ----------------------- Main -----------------------
 async def main():
     if not BOT_TOKEN:
@@ -282,7 +171,8 @@ async def main():
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_payment_proof))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
 
-    await app.run_polling(allowed_updates=None)  # принимать все апдейты
+    # Запуск бота
+    await app.run_polling()  # run_polling в PTB 20+ сам блокирует цикл
 
 if __name__ == "__main__":
     asyncio.run(main())
