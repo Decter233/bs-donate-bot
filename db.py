@@ -1,19 +1,51 @@
 import aiosqlite
 from contextlib import asynccontextmanager
-from config import DB_PATH
+
+DB_PATH = "shop.db"
 
 @asynccontextmanager
 async def get_db():
-    conn = await aiosqlite.connect(DB_PATH)
-    await conn.execute("PRAGMA foreign_keys=ON;")
+    db = await aiosqlite.connect(DB_PATH)
     try:
-        yield conn
-        await conn.commit()
+        yield db
+        await db.commit()
     finally:
-        await conn.close()
+        await db.close()
 
 async def migrate():
-    from pathlib import Path
-    schema_path = Path(__file__).with_name("schema.sql")
-    async with get_db() as db:
-        await db.executescript(schema_path.read_text(encoding="utf-8"))
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            first_name TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            price INTEGER,
+            description TEXT,
+            is_active INTEGER DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            product_id INTEGER,
+            price INTEGER,
+            status TEXT,
+            note TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER,
+            amount INTEGER,
+            proof_file_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+        await db.commit()
