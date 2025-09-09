@@ -1,9 +1,10 @@
-import asyncio
+import os
 from typing import Optional
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+    Application, CommandHandler, CallbackQueryHandler, MessageHandler,
+    ContextTypes, filters
 )
 
 from config import BOT_TOKEN, ADMIN_IDS, PAYMENT_TEXT, QIWI_NUMBER, YOOMONEY_WALLET
@@ -41,16 +42,6 @@ async def set_order_status(order_id: int, status: str, note: Optional[str] = Non
             (status, note, order_id)
         )
 
-async def get_order(order_id: int):
-    async with get_db() as db:
-        sql = (
-            "SELECT o.id, o.user_id, p.name, o.price, o.status, o.created_at "
-            "FROM orders o JOIN products p ON p.id=o.product_id "
-            "WHERE o.id=?"
-        )
-        cur = await db.execute(sql, (order_id,))
-        return await cur.fetchone()
-
 async def record_payment(order_id: int, amount: int, proof_file_id: Optional[str]):
     async with get_db() as db:
         await db.execute(
@@ -82,7 +73,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(txt, reply_markup=main_menu_kb())
 
-# ----------------------- Каталог и заказы -----------------------
+# ----------------------- Каталог -----------------------
 async def catalog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = await list_active_products()
     if not rows:
@@ -132,7 +123,7 @@ async def buy_product(update: Update, context: ContextTypes.DEFAULT_TYPE, produc
         pay_lines.append(f"ЮMoney: `{YOOMONEY_WALLET}`")
     if QIWI_NUMBER:
         pay_lines.append(f"QIWI: `{QIWI_NUMBER}`")
-    pay_info = "\n".join(pay_lines) if pay_lines else "ЮMoney / QIWI реквизиты уточняйте у администратора."
+    pay_info = "\n".join(pay_lines) if pay_lines else "Реквизиты уточняйте у администратора."
     text = (
         f"✅ Заказ создан: *{name}* за *{price}₽*.\n"
         f"Номер заказа: *{oc}*\n\n"
@@ -145,52 +136,6 @@ async def buy_product(update: Update, context: ContextTypes.DEFAULT_TYPE, produc
         [InlineKeyboardButton("⬅️ В меню", callback_data="back_main")]
     ])
     await update.callback_query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
-    for admin_id in ADMIN_IDS:
-        try:
-            await context.bot.send_message(
-                admin_id,
-                f"🆕 Новый заказ {oc}\nПокупатель: {update.effective_user.mention_html()}\nТовар: {name}\nСумма: {price}₽",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Отметить оплачено", callback_data=f"admin_mark_paid_{order_id}"),
-                                                   InlineKeyboardButton("Отклонить", callback_data=f"admin_reject_{order_id}")]])
-            )
-        except Exception:
-            pass
-
-# ----------------------- Обработка оплат -----------------------
-async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    u = update.effective_user
-    file_id = None
-    if update.message.photo:
-        file_id = update.message.photo[-1].file_id
-    elif update.message.document:
-        file_id = update.message.document.file_id
-    else:
-        return
-    async with get_db() as db:
-        cur = await db.execute(
-            "SELECT id, price FROM orders WHERE user_id=? AND status='awaiting_payment' ORDER BY id DESC LIMIT 1;",
-            (u.id,)
-        )
-        row = await cur.fetchone()
-    if not row:
-        await update.message.reply_text("Не нашёл активного заказа в статусе ожидания оплаты. Оформите заказ из каталога.")
-        return
-    order_id, price = row
-    await record_payment(order_id, amount=price, proof_file_id=file_id)
-    oc = order_code(order_id)
-    await update.message.reply_text(f"Спасибо! Чек для {oc} получен. Ожидайте подтверждения администратором.")
-    for admin_id in ADMIN_IDS:
-        try:
-            if update.message.photo:
-                await context.bot.send_photo(admin_id, file_id, caption=f"🧾 Чек по {oc} от @{u.username or u.id}")
-            elif update.message.document:
-                await context.bot.send_document(admin_id, file_id, caption=f"🧾 Чек по {oc} от @{u.username or u.id}")
-            await context.bot.send_message(admin_id, f"Проверить заказ {oc}?",
-                                           reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Отметить оплачено", callback_data=f"admin_mark_paid_{order_id}"),
-                                                                               InlineKeyboardButton("Отклонить", callback_data=f"admin_reject_{order_id}")]]))
-        except Exception:
-            pass
 
 # ----------------------- Админ-функции -----------------------
 def admin_only(func):
@@ -209,4 +154,50 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🧾 Заказы (ожидают)", callback_data="admin_orders_pending")],
         [InlineKeyboardButton("➕ Товары (добавить)", callback_data="admin_add_product")],
-        [InlineKeyboardButton
+        [InlineKeyboardButton("⬅️ Назад", callback_data="back_main")]
+    ])
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text("Админ-меню:", reply_markup=kb)
+    else:
+        await update.message.reply_text("Админ-меню:", reply_markup=kb)
+
+# ----------------------- Callback Router -----------------------
+async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query:
+        return
+    data = query.data
+
+    if data == "catalog":
+        await catalog(update, context)
+    elif data.startswith("prod_"):
+        pid = int(data.split("_")[1])
+        await product_view(update, context, pid)
+    elif data.startswith("buy_"):
+        pid = int(data.split("_")[1])
+        await buy_product(update, context, pid)
+    elif data == "help":
+        await help_cmd(update, context)
+    elif data == "back_main":
+        await start(update, context)
+    elif data == "admin_menu":
+        await admin_menu(update, context)
+    else:
+        await query.answer("Неизвестная команда")
+
+# ----------------------- Main -----------------------
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("admin", admin_menu))
+    app.add_handler(CallbackQueryHandler(callback_router))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, help_cmd))  # пока только для примера
+
+    app.run_polling()
+
+if __name__ == "__main__":
+    migrate()  # создаёт таблицы если их нет
+    main()
