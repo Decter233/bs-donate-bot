@@ -2,7 +2,9 @@ import asyncio
 from typing import Optional
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+)
 
 from config import BOT_TOKEN, ADMIN_IDS, PAYMENT_TEXT, QIWI_NUMBER, YOOMONEY_WALLET
 from db import get_db, migrate
@@ -155,24 +157,56 @@ async def buy_product(update: Update, context: ContextTypes.DEFAULT_TYPE, produc
         except Exception:
             pass
 
-# ----------------------- Main -----------------------
-async def main():
-    if not BOT_TOKEN:
-        raise SystemExit("BOT_TOKEN is not set")
+# ----------------------- Обработка оплат -----------------------
+async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    u = update.effective_user
+    file_id = None
+    if update.message.photo:
+        file_id = update.message.photo[-1].file_id
+    elif update.message.document:
+        file_id = update.message.document.file_id
+    else:
+        return
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT id, price FROM orders WHERE user_id=? AND status='awaiting_payment' ORDER BY id DESC LIMIT 1;",
+            (u.id,)
+        )
+        row = await cur.fetchone()
+    if not row:
+        await update.message.reply_text("Не нашёл активного заказа в статусе ожидания оплаты. Оформите заказ из каталога.")
+        return
+    order_id, price = row
+    await record_payment(order_id, amount=price, proof_file_id=file_id)
+    oc = order_code(order_id)
+    await update.message.reply_text(f"Спасибо! Чек для {oc} получен. Ожидайте подтверждения администратором.")
+    for admin_id in ADMIN_IDS:
+        try:
+            if update.message.photo:
+                await context.bot.send_photo(admin_id, file_id, caption=f"🧾 Чек по {oc} от @{u.username or u.id}")
+            elif update.message.document:
+                await context.bot.send_document(admin_id, file_id, caption=f"🧾 Чек по {oc} от @{u.username or u.id}")
+            await context.bot.send_message(admin_id, f"Проверить заказ {oc}?",
+                                           reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Отметить оплачено", callback_data=f"admin_mark_paid_{order_id}"),
+                                                                               InlineKeyboardButton("Отклонить", callback_data=f"admin_reject_{order_id}")]]))
+        except Exception:
+            pass
 
-    await migrate()  # миграция БД перед запуском
+# ----------------------- Админ-функции -----------------------
+def admin_only(func):
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        if update.effective_user.id not in ADMIN_IDS:
+            if update.callback_query:
+                await update.callback_query.answer("Недостаточно прав", show_alert=True)
+            else:
+                await update.message.reply_text("Недостаточно прав.")
+            return
+        return await func(update, context, *args, **kwargs)
+    return wrapper
 
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    # Регистрация хендлеров
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", admin_menu))
-    app.add_handler(CallbackQueryHandler(callbacks))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_payment_proof))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
-
-    # Запуск бота
-    await app.run_polling()  # run_polling в PTB 20+ сам блокирует цикл
-
-if __name__ == "__main__":
-    asyncio.run(main())
+@admin_only
+async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🧾 Заказы (ожидают)", callback_data="admin_orders_pending")],
+        [InlineKeyboardButton("➕ Товары (добавить)", callback_data="admin_add_product")],
+        [InlineKeyboardButton
