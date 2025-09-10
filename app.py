@@ -1,3 +1,5 @@
+import telegram
+print("PTB version:", telegram.__version__)
 import asyncio
 from typing import Optional
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
