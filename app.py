@@ -1,15 +1,14 @@
 import os
-import asyncio
 import nest_asyncio
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, MessageHandler,
+    Application, CommandHandler, MessageHandler,
     ContextTypes, filters
 )
 from config import BOT_TOKEN, ADMIN_IDS, PAYMENT_TEXT, QIWI_NUMBER, YOOMONEY_WALLET
 from db import get_db, migrate
 
-# Для работы с вебхуками в Render, чтобы избежать RuntimeError
+# ----------------------- Event loop -----------------------
 nest_asyncio.apply()
 
 # ----------------------- Утилиты -----------------------
@@ -26,7 +25,9 @@ async def get_or_create_user(update: Update):
 
 async def list_active_products():
     async with get_db() as db:
-        cur = await db.execute("SELECT id, name, price, description FROM products WHERE is_active=1 ORDER BY id;")
+        cur = await db.execute(
+            "SELECT id, name, price, description FROM products WHERE is_active=1 ORDER BY id;"
+        )
         return await cur.fetchall()
 
 async def create_order(user_id: int, product_id: int, price: int) -> int:
@@ -45,23 +46,24 @@ def main_menu_kb():
         [InlineKeyboardButton("❓ Помощь", callback_data="help")]
     ])
 
-# ----------------------- Команды -----------------------
+# ----------------------- Хендлеры -----------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await get_or_create_user(update)
-    await update.message.reply_text(
-        "Добро пожаловать в магазин доната Brawl Stars!",
-        reply_markup=main_menu_kb()
-    )
+    if update.message:
+        await update.message.reply_text(
+            "Привет! Я донат-бот для Brawl Stars!",
+            reply_markup=main_menu_kb()
+        )
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Нужна помощь? Напишите сюда свой вопрос.\n"
-        "Администратор увидит ваше сообщение.\n\n"
-        "Также используйте /start для меню.",
-        reply_markup=main_menu_kb()
-    )
+    if update.message:
+        await update.message.reply_text(
+            "Нужна помощь? Напишите сюда свой вопрос.\n"
+            "Администратор увидит ваше сообщение.\n\n"
+            "Также используйте /start для меню.",
+            reply_markup=main_menu_kb()
+        )
 
-# ----------------------- Обработка фото/доков -----------------------
 async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_id = None
     if update.message.photo:
@@ -70,35 +72,33 @@ async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYP
         file_id = update.message.document.file_id
     else:
         return
-
     await update.message.reply_text("Спасибо! Чек получен. Админ проверит оплату.")
 
-# ----------------------- Главная функция -----------------------
+# ----------------------- Основной запуск -----------------------
+PORT = int(os.environ.get("PORT", 10000))
+BOT_URL = os.environ.get("URL")  # Например: https://bs-donate-bot.onrender.com
+webhook_path = f"/{BOT_TOKEN}"
+
 async def main():
-    # Миграция базы
-    await migrate()
+    await migrate()  # Миграция базы
 
-    # Получаем переменные среды
-    PORT = int(os.environ.get("PORT", "10000"))
-    BOT_URL = os.environ.get("BOT_URL")
-    webhook_path = f"/{BOT_TOKEN}"
-
-    # Создаём приложение
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Добавляем хендлеры
+    # Регистрируем хендлеры
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_payment_proof))
 
     print("Бот запущен ✅")
 
-    # Запускаем вебхук
+    # Запуск вебхука
     await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
         webhook_url=f"{BOT_URL}{webhook_path}"
     )
 
+# ----------------------- Старт -----------------------
 if __name__ == "__main__":
-    asyncio.run(main())
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(main())
