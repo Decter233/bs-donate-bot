@@ -17,5 +17,5 @@ YOOMONEY_WALLET = os.getenv("YOOMONEY_WALLET", "")
 DB_PATH = os.getenv("DB_PATH", "shop.sqlite3")
 
 # --- Вебхук ---
-BOT_URL = os.getenv("https://bs-donate-bot.onrender.com")  # публичный URL Render
+BOT_URL = os.getenv("BOT_URL", "https://bs-donate-bot.onrender.com")
 PORT = int(os.getenv("PORT", 10000))  # порт Render
