@@ -1,45 +1,43 @@
 import os
+import nest_asyncio
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from db import migrate
 from config import BOT_TOKEN
 
+# ---------------------- Настройки Render ----------------------
 PORT = int(os.environ.get("PORT", 10000))
-BOT_URL = os.environ.get("BOT_URL")  # например, https://bs-donate-bot.onrender.com
+BOT_URL = os.environ.get("BOT_URL")  # https://bs-donate-bot.onrender.com
+WEBHOOK_PATH = f"/{BOT_TOKEN}"
 
-# ------------------ Хендлеры ------------------
+# ---------------------- Хендлеры ----------------------
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привет! Я донат-бот для Brawl Stars!",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🛒 Каталог", callback_data="catalog")],
-            [InlineKeyboardButton("📦 Мои заказы", callback_data="my_orders")],
-            [InlineKeyboardButton("❓ Помощь", callback_data="help")]
-        ])
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛒 Каталог", callback_data="catalog")]])
     )
 
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Используйте /start для меню.")
-
-async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Спасибо! Чек получен. Админ проверит оплату.")
-
-# ------------------ Запуск ------------------
+# ---------------------- Главная функция ----------------------
 async def main():
+    # Миграция базы
     await migrate()
+
+    # Создаём приложение бота
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # Регистрируем хендлеры
     app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_payment_proof))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, lambda u, c: u.message.reply_text("Чек получен!")))
 
-    # Здесь запускаем "без управления loop", просто start
-    await app.initialize()
-    await app.start()
-    print("Бот запущен ✅")
-    await app.updater.start_polling()  # работает на Render вместо webhook
-    await app.updater.idle()  # удерживает процесс
+    # Запуск webhook
+    await app.run_webhook(
+        listen="0.0.0.0",           # обязательно для Render
+        port=PORT,                  # порт из Render
+        webhook_url=f"{BOT_URL}{WEBHOOK_PATH}"  # публичный URL + токен
+    )
 
+# ---------------------- Старт ----------------------
 if __name__ == "__main__":
     import asyncio
+    nest_asyncio.apply()  # предотвращает ошибки loop
     asyncio.run(main())
