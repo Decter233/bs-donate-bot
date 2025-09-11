@@ -76,7 +76,8 @@ async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # ----------------------- Основной запуск -----------------------
 PORT = int(os.environ.get("PORT", 10000))
-BOT_URL = os.environ.get("URL")  # Например: https://bs-donate-bot.onrender.com
+BOT_URL = os.environ.get("BOT_URL")  # <- исправлено
+
 webhook_path = f"/{BOT_TOKEN}"
 
 async def main():
