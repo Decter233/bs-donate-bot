@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()  # загружает .env
 
+BOT_URL = os.getenv("https://bs-donate-bot.onrender.com")  # должно быть https://...
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(","))) if os.getenv("ADMIN_IDS") else []
 PAYMENT_TEXT = os.getenv("PAYMENT_TEXT", "Оплатите заказ {order_code} и отправьте чек.")
