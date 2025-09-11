@@ -1,7 +1,7 @@
 import aiosqlite
 from contextlib import asynccontextmanager
 
-DB_PATH = "shop.db"
+DB_PATH = os.getenv("DB_PATH", "shop.sqlite3")
 
 @asynccontextmanager
 async def get_db():
