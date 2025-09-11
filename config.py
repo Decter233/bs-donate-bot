@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Бот ---
-BOT_TOKEN = os.getenv("7315170970:AAH2dzGe_BN1Ti9oumTlZ0po4FhL7t8GehE")  # токен от BotFather
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # токен от BotFather
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(","))) if os.getenv("ADMIN_IDS") else []
 
 # --- Платежи ---
