@@ -68,7 +68,6 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ----------------------- Обработка фото/доков -----------------------
 async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    u = update.effective_user
     file_id = None
     if update.message.photo:
         file_id = update.message.photo[-1].file_id
@@ -81,7 +80,10 @@ async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 # ----------------------- Главная функция -----------------------
-def main():
+async def main():
+    # миграция базы
+    await migrate()
+
     # создаём приложение
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -91,9 +93,8 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_payment_proof))
 
     print("Бот запущен ✅")
-    app.run_polling()
+    await app.run_polling()
 
 
 if __name__ == "__main__":
-    asyncio.run(migrate())  # миграции базы
-    main()
+    asyncio.run(main())
