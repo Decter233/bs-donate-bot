@@ -1,7 +1,4 @@
 import os
-import nest_asyncio
-import asyncio
-import requests
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from db import migrate
@@ -37,10 +34,11 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Спасибо! Чек получен. Админ проверит оплату.")
 
-# ---------------------- Главная функция ----------------------
-async def main():
-    # Миграция базы
-    await migrate()
+# ---------------------- Старт ----------------------
+if __name__ == "__main__":
+    # Миграция базы (синхронный вызов)
+    import asyncio
+    asyncio.run(migrate())
 
     # Создаём приложение бота
     app = Application.builder().token(BOT_TOKEN).build()
@@ -52,20 +50,9 @@ async def main():
 
     print("Бот запущен ✅")
 
-    # Устанавливаем вебхук в Telegram
-    webhook_url = f"{BOT_URL}{WEBHOOK_PATH}"
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook"
-    response = requests.get(url, params={"url": webhook_url})
-    print("Webhook set:", response.json())
-
-    # Запуск webhook-сервера
-    await app.run_webhook(
-        listen="0.0.0.0",   # обязательно для Render
-        port=PORT,          # порт из Render
-        webhook_url=webhook_url
+    # Запуск webhook (без asyncio.run!)
+    app.run_webhook(
+        listen="0.0.0.0",            
+        port=PORT,                   
+        webhook_url=f"{BOT_URL}{WEBHOOK_PATH}"
     )
-
-# ---------------------- Старт ----------------------
-if __name__ == "__main__":
-    nest_asyncio.apply()
-    asyncio.run(main())
