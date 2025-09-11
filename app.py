@@ -102,5 +102,4 @@ async def main():
 # ----------------------- Старт -----------------------
 if __name__ == "__main__":
     import asyncio
-    # nest_asyncio.apply() больше не нужен
     asyncio.run(main())
