@@ -1,21 +1,22 @@
 import os
 import nest_asyncio
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler,
     ContextTypes, filters
 )
-
-from config import BOT_TOKEN, ADMIN_IDS, PAYMENT_TEXT, QIWI_NUMBER, YOOMONEY_WALLET
+from config import BOT_TOKEN, ADMIN_IDS
 from db import get_db, migrate
 
-nest_asyncio.apply()  # позволяет использовать уже существующий loop
+# ----------------------- Настройка вебхука -----------------------
+PORT = int(os.environ.get("PORT", 8443))
+URL = os.environ.get("URL")  # например "https://bs-donate-bot.onrender.com"
 
+nest_asyncio.apply()  # исправляет "event loop is already running"
 
 # ----------------------- Утилиты -----------------------
 def order_code(order_id: int) -> str:
     return f"ORDER-{order_id:06d}"
-
 
 async def get_or_create_user(update: Update):
     u = update.effective_user
@@ -25,14 +26,10 @@ async def get_or_create_user(update: Update):
             (u.id, u.username, u.first_name)
         )
 
-
 async def list_active_products():
     async with get_db() as db:
-        cur = await db.execute(
-            "SELECT id, name, price, description FROM products WHERE is_active=1 ORDER BY id;"
-        )
+        cur = await db.execute("SELECT id, name, price, description FROM products WHERE is_active=1 ORDER BY id;")
         return await cur.fetchall()
-
 
 async def create_order(user_id: int, product_id: int, price: int) -> int:
     async with get_db() as db:
@@ -42,7 +39,6 @@ async def create_order(user_id: int, product_id: int, price: int) -> int:
         )
         return cur.lastrowid
 
-
 # ----------------------- Клавиатура -----------------------
 def main_menu_kb():
     return InlineKeyboardMarkup([
@@ -51,26 +47,39 @@ def main_menu_kb():
         [InlineKeyboardButton("❓ Помощь", callback_data="help")]
     ])
 
-
 # ----------------------- Команды -----------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await get_or_create_user(update)
     await update.message.reply_text(
-        "Добро пожаловать в магазин доната Brawl Stars!",
+        "Привет! Я донат-бот для Brawl Stars!",
         reply_markup=main_menu_kb()
     )
-
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Нужна помощь? Напишите сюда свой вопрос.\n"
-        "Администратор увидит ваше сообщение.\n\n"
-        "Также используйте /start для меню.",
+        "Нужна помощь? Напишите сюда свой вопрос.\nАдмин увидит ваше сообщение.",
         reply_markup=main_menu_kb()
     )
 
+# ----------------------- Обработчики кнопок -----------------------
+async def catalog_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    products = await list_active_products()
+    text = "\n".join([f"{p[1]} - {p[2]}₽\n{p[3]}" for p in products]) or "Нет доступных продуктов"
+    await update.callback_query.message.edit_text(text, reply_markup=main_menu_kb())
 
-# ----------------------- Обработка фото/доков -----------------------
+async def my_orders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    await update.callback_query.message.reply_text("Здесь будут ваши заказы", reply_markup=main_menu_kb())
+
+async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    await update.callback_query.message.reply_text(
+        "Напишите свой вопрос, админ ответит",
+        reply_markup=main_menu_kb()
+    )
+
+# ----------------------- Фото/документы -----------------------
 async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_id = None
     if update.message.photo:
@@ -79,40 +88,35 @@ async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYP
         file_id = update.message.document.file_id
     else:
         return
-
     await update.message.reply_text("Спасибо! Чек получен. Админ проверит оплату.")
 
-
-# ----------------------- Основная функция -----------------------
+# ----------------------- Главная функция -----------------------
 async def main():
-    # миграция базы
-    await migrate()
+    await migrate()  # миграция БД
 
-    # создаём приложение
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # добавляем хендлеры
+    # Хендлеры
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
+
+    app.add_handler(CallbackQueryHandler(catalog_handler, pattern="catalog"))
+    app.add_handler(CallbackQueryHandler(my_orders_handler, pattern="my_orders"))
+    app.add_handler(CallbackQueryHandler(help_handler, pattern="help"))
+
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_payment_proof))
-
-    # TODO: Добавь сюда CallbackQueryHandler для кнопок каталога и заказов
-
-    PORT = int(os.environ.get("PORT", 8443))
-    URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bs-donate-bot.onrender.com")
-    webhook_path = f"/{BOT_TOKEN}"
 
     print("Бот запущен ✅")
 
-    # запуск webhook
+    # Запуск вебхука
     await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        webhook_url=f"{URL}{webhook_path}"
+        url_path=BOT_TOKEN,
+        webhook_url=f"{URL}/{BOT_TOKEN}"
     )
 
-
-# ----------------------- Точка входа -----------------------
+# ----------------------- Запуск -----------------------
 if __name__ == "__main__":
     import asyncio
-    asyncio.get_event_loop().run_until_complete(main())
+    asyncio.run(main())
