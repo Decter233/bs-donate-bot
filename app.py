@@ -1,20 +1,10 @@
 import os
-import nest_asyncio
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler,
-    ContextTypes, filters
-)
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from config import BOT_TOKEN, ADMIN_IDS, PAYMENT_TEXT, QIWI_NUMBER, YOOMONEY_WALLET
 from db import get_db, migrate
 
-# ----------------------- Event loop -----------------------
-nest_asyncio.apply()
-
 # ----------------------- Утилиты -----------------------
-def order_code(order_id: int) -> str:
-    return f"ORDER-{order_id:06d}"
-
 async def get_or_create_user(update: Update):
     u = update.effective_user
     async with get_db() as db:
@@ -23,22 +13,6 @@ async def get_or_create_user(update: Update):
             (u.id, u.username, u.first_name)
         )
 
-async def list_active_products():
-    async with get_db() as db:
-        cur = await db.execute(
-            "SELECT id, name, price, description FROM products WHERE is_active=1 ORDER BY id;"
-        )
-        return await cur.fetchall()
-
-async def create_order(user_id: int, product_id: int, price: int) -> int:
-    async with get_db() as db:
-        cur = await db.execute(
-            "INSERT INTO orders (user_id, product_id, price, status) VALUES (?, ?, ?, 'awaiting_payment');",
-            (user_id, product_id, price)
-        )
-        return cur.lastrowid
-
-# ----------------------- Клавиатура -----------------------
 def main_menu_kb():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 Каталог", callback_data="catalog")],
@@ -76,8 +50,7 @@ async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # ----------------------- Основной запуск -----------------------
 PORT = int(os.environ.get("PORT", 10000))
-BOT_URL = os.environ.get("BOT_URL")  # <- исправлено
-
+BOT_URL = os.environ.get("BOT_URL")  # https://bs-donate-bot.onrender.com
 webhook_path = f"/{BOT_TOKEN}"
 
 async def main():
@@ -102,4 +75,13 @@ async def main():
 # ----------------------- Старт -----------------------
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main())
+    import sys
+
+    # Render сам запускает loop, поэтому просто делаем так:
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(main())
+        loop.run_forever()
+    except RuntimeError:
+        # Если loop уже запущен, создаем задачу и не закрываем loop
+        asyncio.ensure_future(main())
