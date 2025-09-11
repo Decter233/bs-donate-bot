@@ -1,6 +1,7 @@
 import os
 import nest_asyncio
 import asyncio
+import requests
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from db import migrate
@@ -51,11 +52,17 @@ async def main():
 
     print("Бот запущен ✅")
 
-    # Запуск webhook
+    # Устанавливаем вебхук в Telegram
+    webhook_url = f"{BOT_URL}{WEBHOOK_PATH}"
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook"
+    response = requests.get(url, params={"url": webhook_url})
+    print("Webhook set:", response.json())
+
+    # Запуск webhook-сервера
     await app.run_webhook(
-        listen="0.0.0.0",            # обязательно для Render
-        port=PORT,                   # порт из Render
-        webhook_url=f"{BOT_URL}{WEBHOOK_PATH}"  # публичный URL + токен
+        listen="0.0.0.0",   # обязательно для Render
+        port=PORT,          # порт из Render
+        webhook_url=webhook_url
     )
 
 # ---------------------- Старт ----------------------
