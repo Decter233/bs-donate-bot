@@ -1,18 +1,16 @@
 import os
+import asyncio
 import nest_asyncio
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler,
     ContextTypes, filters
 )
-from config import BOT_TOKEN, ADMIN_IDS
+from config import BOT_TOKEN, ADMIN_IDS, PAYMENT_TEXT, QIWI_NUMBER, YOOMONEY_WALLET
 from db import get_db, migrate
 
-# ----------------------- Настройка вебхука -----------------------
-PORT = int(os.environ.get("PORT", 8443))
-URL = os.environ.get("URL")  # например "https://bs-donate-bot.onrender.com"
-
-nest_asyncio.apply()  # исправляет "event loop is already running"
+# Для работы с вебхуками в Render, чтобы избежать RuntimeError
+nest_asyncio.apply()
 
 # ----------------------- Утилиты -----------------------
 def order_code(order_id: int) -> str:
@@ -51,35 +49,19 @@ def main_menu_kb():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await get_or_create_user(update)
     await update.message.reply_text(
-        "Привет! Я донат-бот для Brawl Stars!",
+        "Добро пожаловать в магазин доната Brawl Stars!",
         reply_markup=main_menu_kb()
     )
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Нужна помощь? Напишите сюда свой вопрос.\nАдмин увидит ваше сообщение.",
+        "Нужна помощь? Напишите сюда свой вопрос.\n"
+        "Администратор увидит ваше сообщение.\n\n"
+        "Также используйте /start для меню.",
         reply_markup=main_menu_kb()
     )
 
-# ----------------------- Обработчики кнопок -----------------------
-async def catalog_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    products = await list_active_products()
-    text = "\n".join([f"{p[1]} - {p[2]}₽\n{p[3]}" for p in products]) or "Нет доступных продуктов"
-    await update.callback_query.message.edit_text(text, reply_markup=main_menu_kb())
-
-async def my_orders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    await update.callback_query.message.reply_text("Здесь будут ваши заказы", reply_markup=main_menu_kb())
-
-async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    await update.callback_query.message.reply_text(
-        "Напишите свой вопрос, админ ответит",
-        reply_markup=main_menu_kb()
-    )
-
-# ----------------------- Фото/документы -----------------------
+# ----------------------- Обработка фото/доков -----------------------
 async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_id = None
     if update.message.photo:
@@ -88,35 +70,35 @@ async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYP
         file_id = update.message.document.file_id
     else:
         return
+
     await update.message.reply_text("Спасибо! Чек получен. Админ проверит оплату.")
 
 # ----------------------- Главная функция -----------------------
 async def main():
-    await migrate()  # миграция БД
+    # Миграция базы
+    await migrate()
 
+    # Получаем переменные среды
+    PORT = int(os.environ.get("PORT", "10000"))
+    BOT_URL = os.environ.get("BOT_URL")
+    webhook_path = f"/{BOT_TOKEN}"
+
+    # Создаём приложение
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Хендлеры
+    # Добавляем хендлеры
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
-
-    app.add_handler(CallbackQueryHandler(catalog_handler, pattern="catalog"))
-    app.add_handler(CallbackQueryHandler(my_orders_handler, pattern="my_orders"))
-    app.add_handler(CallbackQueryHandler(help_handler, pattern="help"))
-
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_payment_proof))
 
     print("Бот запущен ✅")
 
-    # Запуск вебхука
+    # Запускаем вебхук
     await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path=BOT_TOKEN,
-        webhook_url=f"{URL}/{BOT_TOKEN}"
+        webhook_url=f"{BOT_URL}{webhook_path}"
     )
 
-# ----------------------- Запуск -----------------------
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
