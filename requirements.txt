@@ -2,3 +2,4 @@ python-telegram-bot[webhooks]==20.4
 python-dotenv
 aiosqlite
 nest_asyncio
+requests
