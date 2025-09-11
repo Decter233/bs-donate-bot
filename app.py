@@ -16,5 +16,5 @@ if __name__ == "__main__":
         listen="0.0.0.0",
         port=port,
         url_path=BOT_TOKEN,  # можно использовать токен как секретный путь
-        webhook_url=f"https://YOUR-RENDER-URL.onrender.com/{BOT_TOKEN}"
+        webhook_url=f"https://https://bs-donate-bot.onrender.com/{7315170970:AAH2dzGe_BN1Ti9oumTlZ0po4FhL7t8GehE}"
     )
