@@ -1,5 +1,6 @@
 import os
 import asyncio
+import requests
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from db import migrate
@@ -9,6 +10,7 @@ from config import BOT_TOKEN
 PORT = int(os.environ.get("PORT", 10000))
 BOT_URL = os.environ.get("BOT_URL")  # Пример: https://bs-donate-bot.onrender.com
 WEBHOOK_PATH = f"/{BOT_TOKEN}"
+WEBHOOK_URL = f"{BOT_URL}{WEBHOOK_PATH}"
 
 # ---------------------- Клавиатура ----------------------
 def main_menu_kb():
@@ -34,26 +36,31 @@ async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # ---------------------- Главная функция ----------------------
 def main():
-    asyncio.run(migrate())  # база мигрируется один раз
+    # 🛠 запускаем миграцию базы синхронно
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(migrate())
 
     app = Application.builder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_payment_proof))
 
     print("Бот запущен ✅")
 
-    # 🛠 ФИКС: явно создаём event loop для PTB (Python 3.13 требует)
+    # 🛠 Проверяем, что URL живой
     try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        r = requests.get(BOT_URL)
+        print(f"Проверка URL: {r.status_code}")
+    except Exception as e:
+        print(f"Не удалось проверить URL: {e}")
 
+    # 🛠 Запускаем вебхук (без asyncio.run — теперь безопасно)
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        webhook_url=f"{BOT_URL}{WEBHOOK_PATH}"
+        webhook_url=WEBHOOK_URL
     )
 
 if __name__ == "__main__":
