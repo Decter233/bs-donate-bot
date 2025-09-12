@@ -17,11 +17,11 @@ async def start(update, context):
 
 app.add_handler(CommandHandler("start", start))
 
-# --- HTTP корень для проверки ---
+# HTTP проверка
 async def handle_root(request):
     return web.Response(text="Бот жив ✅", content_type="text/plain")
 
-async def main():
+async def init():
     webhook_url = f"{BOT_URL}{WEBHOOK_PATH}"
     print(f"Устанавливаю вебхук: {webhook_url}")
     await app.bot.set_webhook(webhook_url)
@@ -33,14 +33,17 @@ async def main():
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
 
-    # ⬇ Вот здесь просто await — без ручного цикла
-    await app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=webhook_url,
-        drop_pending_updates=True
+    # вместо await → запускаем как фоновую задачу
+    asyncio.create_task(
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            webhook_url=webhook_url,
+            drop_pending_updates=True
+        )
     )
 
-if __name__ == "__main__":
-    # Запуск через asyncio.run — это ОК (новый loop, без конфликтов)
-    asyncio.run(main())
+# запуск через существующий loop
+loop = asyncio.get_event_loop()
+loop.create_task(init())
+loop.run_forever()
