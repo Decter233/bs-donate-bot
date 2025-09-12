@@ -1,4 +1,5 @@
 import os
+import asyncio
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from db import migrate
@@ -33,17 +34,22 @@ async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # ---------------------- Главная функция ----------------------
 def main():
-    import asyncio
-    asyncio.run(migrate())  # база мигрируется асинхронно, но только один раз
+    asyncio.run(migrate())  # база мигрируется один раз
 
     app = Application.builder().token(BOT_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_payment_proof))
 
     print("Бот запущен ✅")
-    # 🚀 Запуск синхронный — без создания своего event loop
+
+    # 🛠 ФИКС: явно создаём event loop для PTB (Python 3.13 требует)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
