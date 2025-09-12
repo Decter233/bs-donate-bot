@@ -1,4 +1,5 @@
 import os
+import asyncio
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from db import migrate
@@ -6,7 +7,7 @@ from config import BOT_TOKEN
 
 # ---------------------- Настройки Render ----------------------
 PORT = int(os.environ.get("PORT", 10000))
-BOT_URL = os.environ.get("BOT_URL")  # Пример: https://bs-donate-bot.onrender.com
+BOT_URL = os.environ.get("BOT_URL")  # https://bs-donate-bot.onrender.com
 WEBHOOK_PATH = f"/{BOT_TOKEN}"
 
 # ---------------------- Клавиатура ----------------------
@@ -34,11 +35,9 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Спасибо! Чек получен. Админ проверит оплату.")
 
-# ---------------------- Старт ----------------------
-if __name__ == "__main__":
-    # Миграция базы (синхронный вызов)
-    import asyncio
-    asyncio.run(migrate())
+async def main():
+    # Миграция базы
+    await migrate()
 
     # Создаём приложение бота
     app = Application.builder().token(BOT_TOKEN).build()
@@ -50,9 +49,15 @@ if __name__ == "__main__":
 
     print("Бот запущен ✅")
 
-    # Запуск webhook (без asyncio.run!)
-    app.run_webhook(
-        listen="0.0.0.0",            
-        port=PORT,                   
+    # Запуск webhook (внутри event loop)
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
         webhook_url=f"{BOT_URL}{WEBHOOK_PATH}"
     )
+
+if __name__ == "__main__":
+    # Создаём и запускаем event loop вручную
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(main())
