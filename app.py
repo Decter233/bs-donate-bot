@@ -1,5 +1,4 @@
 import os
-import asyncio
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from db import migrate
@@ -7,7 +6,7 @@ from config import BOT_TOKEN
 
 # ---------------------- Настройки Render ----------------------
 PORT = int(os.environ.get("PORT", 10000))
-BOT_URL = os.environ.get("BOT_URL")  # https://bs-donate-bot.onrender.com
+BOT_URL = os.environ.get("BOT_URL")  # Пример: https://bs-donate-bot.onrender.com
 WEBHOOK_PATH = f"/{BOT_TOKEN}"
 
 # ---------------------- Клавиатура ----------------------
@@ -20,10 +19,7 @@ def main_menu_kb():
 
 # ---------------------- Хендлеры ----------------------
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Привет! Я донат-бот для Brawl Stars!",
-        reply_markup=main_menu_kb()
-    )
+    await update.message.reply_text("Привет! Я донат-бот для Brawl Stars!", reply_markup=main_menu_kb())
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -35,29 +31,24 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Спасибо! Чек получен. Админ проверит оплату.")
 
-async def main():
-    # Миграция базы
-    await migrate()
+# ---------------------- Главная функция ----------------------
+def main():
+    import asyncio
+    asyncio.run(migrate())  # база мигрируется асинхронно, но только один раз
 
-    # Создаём приложение бота
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Регистрируем хендлеры
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_payment_proof))
 
     print("Бот запущен ✅")
-
-    # Запуск webhook (внутри event loop)
-    await app.run_webhook(
+    # 🚀 Запуск синхронный — без создания своего event loop
+    app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
         webhook_url=f"{BOT_URL}{WEBHOOK_PATH}"
     )
 
 if __name__ == "__main__":
-    # Создаём и запускаем event loop вручную
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(main())
+    main()
