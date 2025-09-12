@@ -1,67 +1,41 @@
 import os
 import asyncio
-import requests
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-from db import migrate
-from config import BOT_TOKEN
+from aiohttp import web
+from telegram.ext import Application, CommandHandler
 
-# ---------------------- Настройки Render ----------------------
-PORT = int(os.environ.get("PORT", 10000))
-BOT_URL = os.environ.get("BOT_URL")  # Пример: https://bs-donate-bot.onrender.com
-WEBHOOK_PATH = f"/{BOT_TOKEN}"
-WEBHOOK_URL = f"{BOT_URL}{WEBHOOK_PATH}"
+TOKEN = os.getenv("BOT_TOKEN")
+BOT_URL = os.getenv("BOT_URL", "https://bs-donate-bot.onrender.com")
+WEBHOOK_PATH = f"/{TOKEN}"
+PORT = int(os.getenv("PORT", 10000))
 
-# ---------------------- Клавиатура ----------------------
-def main_menu_kb():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🛒 Каталог", callback_data="catalog")],
-        [InlineKeyboardButton("📦 Мои заказы", callback_data="my_orders")],
-        [InlineKeyboardButton("❓ Помощь", callback_data="help")]
-    ])
+app = Application.builder().token(TOKEN).build()
 
-# ---------------------- Хендлеры ----------------------
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Я донат-бот для Brawl Stars!", reply_markup=main_menu_kb())
+async def start(update, context):
+    await update.message.reply_text("Привет! Бот работает ✅")
 
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Нужна помощь? Напиши сюда свой вопрос. Админ увидит сообщение.\n\n"
-        "Также используйте /start для меню.",
-        reply_markup=main_menu_kb()
-    )
+app.add_handler(CommandHandler("start", start))
 
-async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Спасибо! Чек получен. Админ проверит оплату.")
+# --- HTTP сервер для Render ---
+async def handle_root(request):
+    return web.Response(text="Бот жив ✅", content_type="text/plain")
 
-# ---------------------- Главная функция ----------------------
-def main():
-    # 🛠 запускаем миграцию базы синхронно
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(migrate())
+async def run():
+    webhook_url = f"{BOT_URL}{WEBHOOK_PATH}"
+    print(f"Устанавливаю вебхук: {webhook_url}")
+    await app.bot.set_webhook(webhook_url)
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    runner = web.AppRunner(web.Application())
+    runner.app.router.add_get("/", handle_root)
 
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_payment_proof))
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
 
-    print("Бот запущен ✅")
-
-    # 🛠 Проверяем, что URL живой
-    try:
-        r = requests.get(BOT_URL)
-        print(f"Проверка URL: {r.status_code}")
-    except Exception as e:
-        print(f"Не удалось проверить URL: {e}")
-
-    # 🛠 Запускаем вебхук (без asyncio.run — теперь безопасно)
-    app.run_webhook(
+    await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        webhook_url=WEBHOOK_URL
+        webhook_url=webhook_url,
     )
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(run())
