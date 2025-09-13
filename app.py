@@ -10,27 +10,19 @@ PORT = int(os.getenv("PORT", 10000))
 app = Application.builder().token(TOKEN).build()
 
 async def start(update, context):
-    user = update.effective_user
-    print(f"Кто-то написал /start: {user.id} ({user.username})")
-    await update.message.reply_text("Привет! Бот работает ✅")
+    print(f"Пришёл /start от {update.effective_user.username} ({update.effective_user.id})")
+    await update.message.reply_text("Привет! Бот на вебхуке работает ✅")
 
-app.add_handler(CommandHandler("start", start))
-
-async def init():
+async def main():
     webhook_url = f"{BOT_URL}{WEBHOOK_PATH}"
     print(f"Устанавливаю вебхук: {webhook_url}")
-
-    await app.bot.set_webhook(webhook_url)
-
-    await app.initialize()
-    await app.start()
-    await app.updater.start_webhook(
+    await app.bot.set_webhook(webhook_url, drop_pending_updates=True)
+    await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
         webhook_url=webhook_url,
         drop_pending_updates=True
     )
 
-loop = asyncio.get_event_loop()
-loop.create_task(init())
-loop.run_forever()
+if __name__ == "__main__":
+    asyncio.run(main())
