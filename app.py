@@ -1,31 +1,45 @@
 import os
-from telegram.ext import Application, CommandHandler
+from flask import Flask, request
+from telethon import TelegramClient, events
+import asyncio
 
-# Загружаем токен из переменных окружения
-TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("Переменная окружения BOT_TOKEN не найдена!")
+# --- Конфигурация ---
+API_ID = int(os.getenv("API_ID"))         # из my.telegram.org
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")       # токен бота
+SESSION = "bot_session"                  # имя сессии Telethon
 
-# Создаём приложение
-app = Application.builder().token(TOKEN).build()
+WEBHOOK_URL_PATH = "/webhook"            # путь webhook
+WEBHOOK_PORT = int(os.getenv("PORT", 10000))  # Render порт
 
-# Хендлер команды /start
-async def start(update, context):
-    await update.message.reply_text("Бот запущен ✅")
+# --- Инициализация Telethon ---
+client = TelegramClient(SESSION, API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-# Регистрируем хендлер
-app.add_handler(CommandHandler("start", start))
+# --- Инициализация Flask ---
+app = Flask(__name__)
 
+@app.route(WEBHOOK_URL_PATH, methods=["POST"])
+def webhook():
+    update = request.get_json()
+    # Здесь можно обработать update вручную
+    print("Получено сообщение:", update)
+    return "OK"
+
+# --- Telethon события ---
+@client.on(events.NewMessage)
+async def handle_new_message(event):
+    text = event.message.message
+    print("Новое сообщение:", text)
+    # Пример: если сообщение содержит ссылку на NFT, переслать себе
+    if "t.me/" in text:
+        await client.send_message("me", f"Получена ссылка: {text}")
+
+# --- Запуск ---
 if __name__ == "__main__":
-    PORT = int(os.getenv("PORT", "10000"))
-    WEBHOOK_URL = "https://bs-donate-bot.onrender.com/webhook"  # без токена и лишних слэшей
-
-    print(f"Устанавливаю вебхук: {WEBHOOK_URL}")
-
-    # Запуск приложения с вебхуком
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=WEBHOOK_URL,
-        drop_pending_updates=True
-    )
+    # Запуск Telethon в отдельном цикле asyncio
+    loop = asyncio.get_event_loop()
+    loop.create_task(client.start())
+    loop.create_task(client.run_until_disconnected())
+    
+    # Запуск Flask сервера для webhook
+    app.run(host="0.0.0.0", port=WEBHOOK_PORT)
