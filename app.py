@@ -1,6 +1,5 @@
 import os
 import asyncio
-from aiohttp import web
 from telegram.ext import Application, CommandHandler
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -11,12 +10,11 @@ PORT = int(os.getenv("PORT", 10000))
 app = Application.builder().token(TOKEN).build()
 
 async def start(update, context):
+    user = update.effective_user
+    print(f"Кто-то написал /start: {user.id} ({user.username})")
     await update.message.reply_text("Привет! Бот работает ✅")
 
 app.add_handler(CommandHandler("start", start))
-
-async def handle_root(request):
-    return web.Response(text="Бот жив ✅", content_type="text/plain")
 
 async def init():
     webhook_url = f"{BOT_URL}{WEBHOOK_PATH}"
@@ -24,7 +22,6 @@ async def init():
 
     await app.bot.set_webhook(webhook_url)
 
-    # Ручной запуск вместо run_webhook()
     await app.initialize()
     await app.start()
     await app.updater.start_webhook(
@@ -33,13 +30,6 @@ async def init():
         webhook_url=webhook_url,
         drop_pending_updates=True
     )
-
-    aio_app = web.Application()
-    aio_app.router.add_get("/", handle_root)
-    runner = web.AppRunner(aio_app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
 
 loop = asyncio.get_event_loop()
 loop.create_task(init())
