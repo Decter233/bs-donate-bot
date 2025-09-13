@@ -1,28 +1,31 @@
 import os
-import asyncio
 from telegram.ext import Application, CommandHandler
 
+# Загружаем токен из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
-BOT_URL = os.getenv("BOT_URL", "https://bs-donate-bot.onrender.com")
-WEBHOOK_PATH = f"/{TOKEN}"
-PORT = int(os.getenv("PORT", 10000))
+if not TOKEN:
+    raise ValueError("Переменная окружения BOT_TOKEN не найдена!")
 
+# Создаём приложение
 app = Application.builder().token(TOKEN).build()
 
+# Хендлер команды /start
 async def start(update, context):
-    print(f"Пришёл /start от {update.effective_user.username} ({update.effective_user.id})")
-    await update.message.reply_text("Привет! Бот на вебхуке работает ✅")
+    await update.message.reply_text("Бот запущен ✅")
 
-async def main():
-    webhook_url = f"{BOT_URL}{WEBHOOK_PATH}"
-    print(f"Устанавливаю вебхук: {webhook_url}")
-    await app.bot.set_webhook(webhook_url, drop_pending_updates=True)
-    await app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=webhook_url,
-        drop_pending_updates=True
-    )
+# Регистрируем хендлер
+app.add_handler(CommandHandler("start", start))
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    PORT = int(os.getenv("PORT", "10000"))
+    WEBHOOK_URL = "https://bs-donate-bot.onrender.com/webhook"  # без токена и лишних слэшей
+
+    print(f"Устанавливаю вебхук: {WEBHOOK_URL}")
+
+    # Запуск приложения с вебхуком
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=WEBHOOK_URL,
+        drop_pending_updates=True
+    )
